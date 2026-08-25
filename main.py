@@ -107,8 +107,7 @@ def run_dummy_server():
 if __name__ == "__main__":
     # Start dummy web server to keep Render happy
     threading.Thread(target=run_dummy_server, daemon=True).start()
-    
-    send_telegram_alert("🚀 *Lorentzian Alert Bot is Online & Monitoring (15M Timeframe - 90s Loop)!*")
+    send_telegram_alert("🚀 *Lorentzian Alert Bot is Online & Monitoring 24/7 (15M Timeframe - 90s Loop)!*")
     while True:
         check_market()
         time.sleep(90)  # Check market every 90 seconds (1.5 minutes)
