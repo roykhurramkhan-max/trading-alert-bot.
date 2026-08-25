@@ -1,10 +1,9 @@
+import os
 import time
 import requests
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from ta.trend import EMAIndicator
-import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
 from datetime import datetime
@@ -14,7 +13,6 @@ import pytz
 TELEGRAM_TOKEN = "8982239237:AAGJCgl8qT6c4wPG42yyVXf_wuu7_DM8Pr4"
 CHAT_ID = "7211531020"
 
-# Tickers: Gold, Silver, Bitcoin
 PAIRS = {
     'Gold (XAUUSD)': 'GC=F',
     'Silver (XAGUSD)': 'SI=F',
@@ -22,7 +20,7 @@ PAIRS = {
 }
 
 last_signals = {'Gold (XAUUSD)': None, 'Silver (XAGUSD)': None, 'Bitcoin (BTCUSD)': None}
-last_morning_msg_date = None  # Daily Good Morning tracking
+last_morning_msg_date = None
 
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -37,70 +35,106 @@ def check_daily_good_morning():
     pkt = pytz.timezone('Asia/Karachi')
     now_pkt = datetime.now(pkt)
     
-    # Check if time is 8:00 AM PKT and message hasn't been sent today
     if now_pkt.hour == 8 and now_pkt.minute == 0:
         today_str = now_pkt.strftime('%Y-%m-%d')
         if last_morning_msg_date != today_str:
-            morning_msg = "☀️ *Good Morning Boss!*\n\nYour Lorentzian Bot is monitoring 24/7 the market! 🚀📈"
+            morning_msg = "☀️ *Good Morning Boss!*\n\nYour Lorentzian ML Engine is 24/7 Monitoring! 🚀📈"
             send_telegram_alert(morning_msg)
             last_morning_msg_date = today_str
 
-def get_lorentzian_signal(df):
-    """Simplified Machine Learning KNN Distance Classifier with 200 EMA Filter"""
-    df = df.copy()
+# ==================== LORENTZIAN ML ENGINE ====================
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+def calculate_features(df):
+    """Calculates Normalized Feature Space for Lorentzian Classifier"""
+    df['RSI'] = calculate_rsi(df['Close'], 14) / 100.0
     
-    # Technical Indicators (Features)
-    df['EMA_200'] = EMAIndicator(close=df['Close'], window=200).ema_indicator()
-    df['RSI'] = pd.qcut(df['Close'].pct_change(), q=4, labels=False, duplicates='drop')
+    # WaveTrend Approximation
+    ap = (df['High'] + df['Low'] + df['Close']) / 3
+    esa = ap.ewm(span=10, adjust=False).mean()
+    d = (ap - esa).abs().ewm(span=10, adjust=False).mean()
+    ci = (ap - esa) / (0.015 * d)
+    df['WT'] = ci.ewm(span=21, adjust=False).mean() / 100.0
     
-    # Distance Metric Simulation (KNN logic)
-    df['Price_Change'] = df['Close'].pct_change()
-    df['Signal'] = 0
+    # CCI
+    tp = (df['High'] + df['Low'] + df['Close']) / 3
+    sma = tp.rolling(20).mean()
+    mad = tp.rolling(20).apply(lambda x: np.fabs(x - x.mean()).mean())
+    df['CCI'] = ((tp - sma) / (0.015 * mad)) / 100.0
     
-    # Trend Rules
-    for i in range(200, len(df)):
-        close_price = df['Close'].iloc[i]
-        ema_val = df['EMA_200'].iloc[i]
-        prev_close = df['Close'].iloc[i-1]
+    df.fillna(0, inplace=True)
+    return df
+
+def lorentzian_distance(x, y):
+    """Lorentzian Distance Calculation: sum(log(1 + |x_i - y_i|))"""
+    return np.sum(np.log(1 + np.abs(x - y)))
+
+def get_lorentzian_prediction(df, k=8, max_bars=1000):
+    """K-NN Machine Learning Classifier using Lorentzian Distance"""
+    df = calculate_features(df)
+    features = ['RSI', 'WT', 'CCI']
+    
+    data = df[features].values
+    n_bars = len(data)
+    
+    if n_bars < max_bars:
+        max_bars = n_bars
         
-        # Simple Machine Learning Threshold Strategy
-        momentum = (df['Close'].iloc[i] - df['Close'].iloc[i-4]) / df['Close'].iloc[i-4]
+    current_features = data[-1]
+    distances = []
+    
+    # Historical Pattern Matching
+    for i in range(n_bars - max_bars, n_bars - 4):
+        dist = lorentzian_distance(current_features, data[i])
         
-        if close_price > ema_val and momentum > 0.005 and prev_close <= ema_val:
-            df.iloc[i, df.columns.get_loc('Signal')] = 1  # BUY Signal
-        elif close_price < ema_val and momentum < -0.005 and prev_close >= ema_val:
-            df.iloc[i, df.columns.get_loc('Signal')] = -1 # SELL Signal
-            
-    return df.iloc[-1]['Signal'], df.iloc[-1]['Close'], df.iloc[-1]['EMA_200']
+        # Label: Direction 4 bars ahead
+        future_return = df['Close'].iloc[i+4] - df['Close'].iloc[i]
+        label = 1 if future_return > 0 else (-1 if future_return < 0 else 0)
+        
+        distances.append((dist, label))
+        
+    distances.sort(key=lambda x: x[0])
+    neighbors = distances[:k]
+    
+    # Voting logic
+    prediction = sum([n[1] for n in neighbors])
+    
+    if prediction > 2:
+        return 1, df['Close'].iloc[-1]   # BUY
+    elif prediction < -2:
+        return -1, df['Close'].iloc[-1]  # SELL
+    else:
+        return 0, df['Close'].iloc[-1]   # NEUTRAL
 
 def check_market():
     global last_signals
-    print("Checking 15M Market Candles...")
+    print("Executing Lorentzian Distance ML Engine...")
     
     for name, ticker in PAIRS.items():
         try:
-            # Download 15-Minute historical data
-            df = yf.download(tickers=ticker, period='10d', interval='15m', progress=False)
-            if df.empty or len(df) < 200:
+            df = yf.download(tickers=ticker, period='5d', interval='15m', progress=False)
+            if df.empty or len(df) < 100:
                 continue
                 
-            # Handle multi-index columns if present
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
                 
-            signal, current_price, ema_200 = get_lorentzian_signal(df)
+            signal, current_price = get_lorentzian_prediction(df)
             
-            # Send alert only when a new signal forms
             if signal != 0 and signal != last_signals[name]:
                 direction = "🟢 BUY SIGNAL" if signal == 1 else "🔴 SELL SIGNAL"
                 msg = (
-                    f"⚠️ *NEW TRADING SIGNAL DETECTED* ⚠️\n\n"
+                    f"⚠️ *LORENTZIAN ML RAW SIGNAL* ⚠️\n\n"
                     f"📌 *Pair:* {name}\n"
                     f"📈 *Direction:* {direction}\n"
-                    f"💰 *Entry Price:* ${current_price:.2f}\n"
-                    f"📊 *200 EMA Level:* ${ema_200:.2f}\n"
+                    f"💰 *Price:* ${current_price:.2f}\n"
                     f"⏰ *Timeframe:* 15M Candle Close\n\n"
-                    f"⚡ _Please check Risk Management ($40 Risk) before placing trade!_"
+                    f"⚡ _Pure K-NN Lorentzian Classifier Alert!_"
                 )
                 send_telegram_alert(msg)
                 last_signals[name] = signal
@@ -112,20 +146,19 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is Running 24/7!")
+        self.wfile.write(b"Lorentzian Pure ML Bot is Active 24/7!")
 
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
     server.serve_forever()
 
-# Continuous 24/7 Monitoring Loop
 if __name__ == "__main__":
-    # Start dummy web server to keep Render happy
     threading.Thread(target=run_dummy_server, daemon=True).start()
+    send_telegram_alert("🚀 *Lorentzian Pure Machine Learning Engine is Online!*")
     
-    send_telegram_alert("🚀 *Lorentzian Alert Bot is Online & Monitoring 24/7 (15M Timeframe - 90s Loop)!*")
     while True:
         check_daily_good_morning()
         check_market()
-        time.sleep(90)  # Check market every 90 seconds (1.5 minutes)
+        time.sleep(90)
+        
