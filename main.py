@@ -4,10 +4,13 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from ta.trend import EMAIndicator
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
 # ==================== CONFIGURATION ====================
-TELEGRAM_TOKEN = "8982239237:AAGJCgl8qT6c4wPG42yyVXf_wuu7_DM8Pr4"  # Yahan apna Bot Token lagayein
-CHAT_ID = "7211531020"                   # Yahan apni Chat ID lagayein
+TELEGRAM_TOKEN = "8982239237:AAGJCgl8qT6c4wPG42yyVXf_wuu7_DM8Pr4"
+CHAT_ID = "7211531020"
 
 # Tickers: Gold, Silver, Bitcoin
 PAIRS = {
@@ -56,12 +59,12 @@ def get_lorentzian_signal(df):
 
 def check_market():
     global last_signals
-    print("Checking 1H Market Candles...")
+    print("Checking 15M Market Candles...")
     
     for name, ticker in PAIRS.items():
         try:
-            # Download 1-Hour historical data
-            df = yf.download(tickers=ticker, period='5d', interval='1h', progress=False)
+            # Download 15-Minute historical data
+            df = yf.download(tickers=ticker, period='10d', interval='15m', progress=False)
             if df.empty or len(df) < 200:
                 continue
                 
@@ -80,7 +83,7 @@ def check_market():
                     f"📈 *Direction:* {direction}\n"
                     f"💰 *Entry Price:* ${current_price:.2f}\n"
                     f"📊 *200 EMA Level:* ${ema_200:.2f}\n"
-                    f"⏰ *Timeframe:* 1H Candle Close\n\n"
+                    f"⏰ *Timeframe:* 15M Candle Close\n\n"
                     f"⚡ _Please check Risk Management ($40 Risk) before placing trade!_"
                 )
                 send_telegram_alert(msg)
@@ -88,9 +91,6 @@ def check_market():
                 
         except Exception as e:
             print(f"Error checking {name}: {e}")
-import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
 
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -108,8 +108,8 @@ if __name__ == "__main__":
     # Start dummy web server to keep Render happy
     threading.Thread(target=run_dummy_server, daemon=True).start()
     
-    send_telegram_alert("🚀 *Lorentzian Alert Bot is Online & Monitoring 24/7!*")
+    send_telegram_alert("🚀 *Lorentzian Alert Bot is Online & Monitoring (15M Timeframe - 90s Loop)!*")
     while True:
         check_market()
-        time.sleep(60)  # Check market every 1 minute
-        
+        time.sleep(90)  # Check market every 90 seconds (1.5 minutes)
+    
