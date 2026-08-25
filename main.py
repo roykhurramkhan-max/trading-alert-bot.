@@ -7,6 +7,8 @@ from ta.trend import EMAIndicator
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+from datetime import datetime
+import pytz
 
 # ==================== CONFIGURATION ====================
 TELEGRAM_TOKEN = "8982239237:AAGJCgl8qT6c4wPG42yyVXf_wuu7_DM8Pr4"
@@ -20,6 +22,7 @@ PAIRS = {
 }
 
 last_signals = {'Gold (XAUUSD)': None, 'Silver (XAGUSD)': None, 'Bitcoin (BTCUSD)': None}
+last_morning_msg_date = None  # Daily Good Morning tracking
 
 def send_telegram_alert(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -28,6 +31,19 @@ def send_telegram_alert(message):
         requests.post(url, json=payload)
     except Exception as e:
         print(f"Error sending Telegram message: {e}")
+
+def check_daily_good_morning():
+    global last_morning_msg_date
+    pkt = pytz.timezone('Asia/Karachi')
+    now_pkt = datetime.now(pkt)
+    
+    # Check if time is 8:00 AM PKT and message hasn't been sent today
+    if now_pkt.hour == 8 and now_pkt.minute == 0:
+        today_str = now_pkt.strftime('%Y-%m-%d')
+        if last_morning_msg_date != today_str:
+            morning_msg = "☀️ *Good Morning Boss!*\n\nYour Lorentzian Bot is monitoring 24/7 the market! 🚀📈"
+            send_telegram_alert(morning_msg)
+            last_morning_msg_date = today_str
 
 def get_lorentzian_signal(df):
     """Simplified Machine Learning KNN Distance Classifier with 200 EMA Filter"""
@@ -107,8 +123,9 @@ def run_dummy_server():
 if __name__ == "__main__":
     # Start dummy web server to keep Render happy
     threading.Thread(target=run_dummy_server, daemon=True).start()
+    
     send_telegram_alert("🚀 *Lorentzian Alert Bot is Online & Monitoring 24/7 (15M Timeframe - 90s Loop)!*")
     while True:
+        check_daily_good_morning()
         check_market()
         time.sleep(90)  # Check market every 90 seconds (1.5 minutes)
-    
