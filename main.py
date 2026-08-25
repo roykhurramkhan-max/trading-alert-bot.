@@ -111,4 +111,5 @@ if __name__ == "__main__":
     send_telegram_alert("🚀 *Lorentzian Alert Bot is Online & Monitoring 24/7!*")
     while True:
         check_market()
-        time.sleep(300) # Check market every 5 minutes
+        time.sleep(60)  # Check market every 1 minute
+        
