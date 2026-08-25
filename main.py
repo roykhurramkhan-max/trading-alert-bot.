@@ -88,11 +88,27 @@ def check_market():
                 
         except Exception as e:
             print(f"Error checking {name}: {e}")
+import os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
+
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is Running 24/7!")
+
+def run_dummy_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
+    server.serve_forever()
 
 # Continuous 24/7 Monitoring Loop
 if __name__ == "__main__":
+    # Start dummy web server to keep Render happy
+    threading.Thread(target=run_dummy_server, daemon=True).start()
+    
     send_telegram_alert("🚀 *Lorentzian Alert Bot is Online & Monitoring 24/7!*")
     while True:
         check_market()
         time.sleep(300) # Check market every 5 minutes
-      
