@@ -1,5 +1,4 @@
-yfinance
+requests
 pandas
 numpy
-ta
-requests
+schedule
